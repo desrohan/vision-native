@@ -8,6 +8,9 @@ import { classifyGesture, GestureResult, GestureTemplate } from "../engine/gestu
 import { GestureStateMachine, StateMachineOutput } from "../engine/stateMachine";
 import { dispatchGesture, DEFAULT_MAPPINGS, GestureMapping } from "../engine/actionDispatcher";
 import { loadMappings, saveMappings, loadTemplates, saveTemplates } from "../engine/storage";
+import { loadSettings } from "../engine/settings";
+import { createOverlayWindow, destroyOverlayWindow } from "../engine/overlayManager";
+import { emitTo } from "@tauri-apps/api/event";
 import AssignGesture from "./AssignGesture";
 
 const HAND_CONNECTIONS: [number, number][] = [
@@ -27,9 +30,13 @@ export default function CameraPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const animFrameRef = useRef<number>(0);
-  const stateMachineRef = useRef(new GestureStateMachine());
+  const settingsRef = useRef(loadSettings());
+  const stateMachineRef = useRef(new GestureStateMachine({
+    confidenceThreshold: settingsRef.current.confidenceThreshold,
+  }));
   const mappingsRef = useRef<GestureMapping[]>(loadMappings() ?? DEFAULT_MAPPINGS);
   const templatesRef = useRef<GestureTemplate[]>(loadTemplates());
+  const lastEmittedState = useRef("");
 
   const [gestures, setGestures] = useState<GestureResult[]>([]);
   const [mappings, setMappings] = useState<GestureMapping[]>(mappingsRef.current);
@@ -88,6 +95,16 @@ export default function CameraPreview() {
     return () => { cancelled = true; };
   }, []);
 
+  // Manage overlay HUD window
+  useEffect(() => {
+    if (settingsRef.current.showOverlayHUD) {
+      createOverlayWindow();
+    }
+    return () => {
+      destroyOverlayWindow();
+    };
+  }, []);
+
   // Start camera
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -101,7 +118,9 @@ export default function CameraPreview() {
         }
 
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 640, height: 480 },
+          video: settingsRef.current.cameraDeviceId
+            ? { deviceId: { exact: settingsRef.current.cameraDeviceId }, width: 640, height: 480 }
+            : { width: 640, height: 480 },
         });
 
         if (cancelled) {
@@ -134,6 +153,16 @@ export default function CameraPreview() {
     };
   }, []);
 
+  // Schedule next frame — uses rAF when visible, setTimeout when hidden
+  const scheduleNext = useCallback((fn: () => void) => {
+    if (document.hidden) {
+      // Window hidden (tray mode) — setTimeout keeps running
+      animFrameRef.current = window.setTimeout(fn, 33) as unknown as number;
+    } else {
+      animFrameRef.current = requestAnimationFrame(fn);
+    }
+  }, []);
+
   // Detection loop
   const detect = useCallback(() => {
     const video = videoRef.current;
@@ -141,7 +170,7 @@ export default function CameraPreview() {
     const handLandmarker = handLandmarkerRef.current;
 
     if (!video || !canvas || !handLandmarker || video.readyState < 2) {
-      animFrameRef.current = requestAnimationFrame(detect);
+      scheduleNext(detect);
       return;
     }
 
@@ -158,7 +187,7 @@ export default function CameraPreview() {
     // Avoid sending same frame twice
     if (now - lastFrameTime.current < 33) {
       // cap at ~30fps
-      animFrameRef.current = requestAnimationFrame(detect);
+      scheduleNext(detect);
       return;
     }
     lastFrameTime.current = now;
@@ -167,7 +196,7 @@ export default function CameraPreview() {
     try {
       results = handLandmarker.detectForVideo(video, now);
     } catch {
-      animFrameRef.current = requestAnimationFrame(detect);
+      scheduleNext(detect);
       return;
     }
 
@@ -240,8 +269,18 @@ export default function CameraPreview() {
       dispatchGesture(output.firedGesture, mappingsRef.current).catch(console.error);
     }
 
-    animFrameRef.current = requestAnimationFrame(detect);
-  }, []);
+    // Emit state to overlay HUD (only on changes)
+    const stateKey = `${output.state}:${output.firedGesture || ""}`;
+    if (stateKey !== lastEmittedState.current) {
+      lastEmittedState.current = stateKey;
+      emitTo("overlay", "gesture-state", {
+        state: output.state,
+        firedGesture: output.firedGesture,
+      }).catch(() => {});
+    }
+
+    scheduleNext(detect);
+  }, [scheduleNext]);
 
   // Start detection loop once everything is ready
   useEffect(() => {
@@ -250,6 +289,7 @@ export default function CameraPreview() {
     }
     return () => {
       cancelAnimationFrame(animFrameRef.current);
+      clearTimeout(animFrameRef.current);
     };
   }, [loading, detect]);
 
@@ -272,8 +312,17 @@ export default function CameraPreview() {
         />
         <canvas ref={canvasRef} style={styles.canvas} />
 
-        {/* FPS counter */}
-        <div style={styles.fpsCounter}>{fps} FPS</div>
+        {/* FPS counter + Settings gear */}
+        <div style={styles.topLeft}>
+          <div style={styles.fpsCounter}>{fps} FPS</div>
+          <button
+            style={styles.gearBtn}
+            onClick={() => { window.location.hash = "#/settings"; }}
+            title="Settings"
+          >
+            ⚙
+          </button>
+        </div>
 
         {/* Gesture labels */}
         <div style={styles.gesturePanel}>
@@ -423,15 +472,30 @@ const styles: Record<string, React.CSSProperties> = {
     pointerEvents: "none",
   },
   fpsCounter: {
-    position: "absolute",
-    top: 12,
-    left: 12,
     color: "#00FF88",
     fontSize: 14,
     fontFamily: "monospace",
     background: "rgba(0,0,0,0.6)",
     padding: "4px 8px",
     borderRadius: 4,
+  },
+  topLeft: {
+    position: "absolute",
+    top: 12,
+    left: 12,
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+  },
+  gearBtn: {
+    background: "rgba(0,0,0,0.6)",
+    border: "none",
+    borderRadius: 4,
+    color: "#aaa",
+    fontSize: 18,
+    padding: "2px 8px",
+    cursor: "pointer",
+    lineHeight: 1,
   },
   gesturePanel: {
     position: "absolute",
