@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { NormalizedLandmark } from "@mediapipe/tasks-vision";
 import { normalizeLandmarks, GestureTemplate } from "../engine/gestureClassifier";

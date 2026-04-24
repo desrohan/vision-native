@@ -32,7 +32,7 @@ export function createOverlayWindow(): void {
 
 export async function destroyOverlayWindow(): Promise<void> {
   try {
-    const overlay = WebviewWindow.getByLabel("overlay");
+    const overlay = await WebviewWindow.getByLabel("overlay");
     if (overlay) {
       await overlay.close();
     }

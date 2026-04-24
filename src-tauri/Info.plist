@@ -4,5 +4,7 @@
 <dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Vision needs camera access to detect hand gestures.</string>
+	<key>NSAppSleepDisabled</key>
+	<true/>
 </dict>
 </plist>

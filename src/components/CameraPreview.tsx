@@ -153,24 +153,14 @@ export default function CameraPreview() {
     };
   }, []);
 
-  // Schedule next frame — uses rAF when visible, setTimeout when hidden
-  const scheduleNext = useCallback((fn: () => void) => {
-    if (document.hidden) {
-      // Window hidden (tray mode) — setTimeout keeps running
-      animFrameRef.current = window.setTimeout(fn, 33) as unknown as number;
-    } else {
-      animFrameRef.current = requestAnimationFrame(fn);
-    }
-  }, []);
-
-  // Detection loop
+  // Detection function
   const detect = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     const handLandmarker = handLandmarkerRef.current;
 
     if (!video || !canvas || !handLandmarker || video.readyState < 2) {
-      scheduleNext(detect);
+      animFrameRef.current = requestAnimationFrame(detect);
       return;
     }
 
@@ -187,7 +177,7 @@ export default function CameraPreview() {
     // Avoid sending same frame twice
     if (now - lastFrameTime.current < 33) {
       // cap at ~30fps
-      scheduleNext(detect);
+      animFrameRef.current = requestAnimationFrame(detect);
       return;
     }
     lastFrameTime.current = now;
@@ -196,7 +186,7 @@ export default function CameraPreview() {
     try {
       results = handLandmarker.detectForVideo(video, now);
     } catch {
-      scheduleNext(detect);
+      animFrameRef.current = requestAnimationFrame(detect);
       return;
     }
 
@@ -279,8 +269,8 @@ export default function CameraPreview() {
       }).catch(() => {});
     }
 
-    scheduleNext(detect);
-  }, [scheduleNext]);
+    animFrameRef.current = requestAnimationFrame(detect);
+  }, []);
 
   // Start detection loop once everything is ready
   useEffect(() => {
@@ -289,7 +279,6 @@ export default function CameraPreview() {
     }
     return () => {
       cancelAnimationFrame(animFrameRef.current);
-      clearTimeout(animFrameRef.current);
     };
   }, [loading, detect]);
 
