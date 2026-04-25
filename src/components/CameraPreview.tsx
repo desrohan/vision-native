@@ -56,6 +56,10 @@ export default function CameraPreview() {
   const lastFrameTime = useRef(0);
   const frameCount = useRef(0);
   const fpsInterval = useRef(0);
+  const canvasSized = useRef(false);
+  const idleFrames = useRef(0); // count consecutive no-hand frames
+  const prevGestureKey = useRef(""); // track gesture changes to avoid redundant setState
+  const prevMachineState = useRef("");
 
   // Initialize MediaPipe
   useEffect(() => {
@@ -174,9 +178,9 @@ export default function CameraPreview() {
       fpsInterval.current = now;
     }
 
-    // Avoid sending same frame twice
-    if (now - lastFrameTime.current < 33) {
-      // cap at ~30fps
+    // Adaptive frame interval: 15fps active, 5fps idle (no hands)
+    const interval = idleFrames.current > 30 ? 200 : 66; // 5fps idle, ~15fps active
+    if (now - lastFrameTime.current < interval) {
       animFrameRef.current = requestAnimationFrame(detect);
       return;
     }
@@ -190,11 +194,15 @@ export default function CameraPreview() {
       return;
     }
 
-    // Draw
+    // Draw — only resize canvas once
     const ctx = canvas.getContext("2d")!;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!canvasSized.current || canvas.width !== video.videoWidth) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvasSized.current = true;
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
 
     const newGestures: GestureResult[] = [];
 
@@ -245,13 +253,25 @@ export default function CameraPreview() {
 
     if (newGestures.length === 0) {
       latestLandmarksRef.current = null;
+      idleFrames.current++;
+    } else {
+      idleFrames.current = 0;
     }
 
-    setGestures(newGestures);
+    // Only update React state when gesture info actually changes
+    const gestureKey = newGestures.map(g => `${g.gesture}:${g.handedness}`).join(",");
+    if (gestureKey !== prevGestureKey.current) {
+      prevGestureKey.current = gestureKey;
+      setGestures(newGestures);
+    }
 
     // Update state machine (skip if assigning)
     const output = stateMachineRef.current.update(newGestures, now);
-    setMachineOutput(output);
+    const machineKey = `${output.state}:${output.firedGesture || ""}`;
+    if (machineKey !== prevMachineState.current) {
+      prevMachineState.current = machineKey;
+      setMachineOutput(output);
+    }
 
     // If a gesture was just fired and we're not in assign mode, dispatch
     if (output.firedGesture) {
@@ -260,9 +280,8 @@ export default function CameraPreview() {
     }
 
     // Emit state to overlay HUD (only on changes)
-    const stateKey = `${output.state}:${output.firedGesture || ""}`;
-    if (stateKey !== lastEmittedState.current) {
-      lastEmittedState.current = stateKey;
+    if (machineKey !== lastEmittedState.current) {
+      lastEmittedState.current = machineKey;
       emitTo("overlay", "gesture-state", {
         state: output.state,
         firedGesture: output.firedGesture,
