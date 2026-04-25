@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Vision needs camera access to detect hand gestures.</string>
+	<string>Gestus needs camera access to detect hand gestures.</string>
 	<key>NSAppSleepDisabled</key>
 	<true/>
 </dict>

@@ -1,103 +1,91 @@
-import { useRef, useEffect, useState, useCallback } from "react";
-import {
-  HandLandmarker,
-  FilesetResolver,
-  HandLandmarkerResult,
-} from "@mediapipe/tasks-vision";
-import { classifyGesture, GestureResult, GestureTemplate } from "../engine/gestureClassifier";
-import { GestureStateMachine, StateMachineOutput } from "../engine/stateMachine";
-import { dispatchGesture, DEFAULT_MAPPINGS, GestureMapping } from "../engine/actionDispatcher";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { GestureTemplate } from "../engine/gestureClassifier";
+import { dispatchGesture, GestureMapping, DEFAULT_MAPPINGS } from "../engine/actionDispatcher";
 import { loadMappings, saveMappings, loadTemplates, saveTemplates } from "../engine/storage";
 import { loadSettings } from "../engine/settings";
 import { createOverlayWindow, destroyOverlayWindow } from "../engine/overlayManager";
 import { emitTo } from "@tauri-apps/api/event";
 import AssignGesture from "./AssignGesture";
 
+interface SidecarGesture {
+  type: string;
+  gesture: string;
+  confidence: number;
+  handIndex: number;
+}
+
+interface SidecarState {
+  type: string;
+  state: string;
+  firedGesture: string | null;
+  holdDurationMs: number;
+}
+
+interface SidecarStatus {
+  type: string;
+  camera: string;
+  fps: number;
+}
+
 const HAND_CONNECTIONS: [number, number][] = [
-  [0, 1], [1, 2], [2, 3], [3, 4],       // thumb
-  [0, 5], [5, 6], [6, 7], [7, 8],       // index
-  [0, 9], [9, 10], [10, 11], [11, 12],  // middle
-  [0, 13], [13, 14], [14, 15], [15, 16],// ring
-  [0, 17], [17, 18], [18, 19], [19, 20],// pinky
-  [5, 9], [9, 13], [13, 17],            // palm
+  [0, 1], [1, 2], [2, 3], [3, 4],
+  [0, 5], [5, 6], [6, 7], [7, 8],
+  [0, 9], [9, 10], [10, 11], [11, 12],
+  [0, 13], [13, 14], [14, 15], [15, 16],
+  [0, 17], [17, 18], [18, 19], [19, 20],
+  [5, 9], [9, 13], [13, 17],
 ];
 
-const DOT_COLORS = ["#00FF88", "#FF6B6B"]; // green for hand 0, red for hand 1
+const DOT_COLORS = ["#00FF88", "#FF6B6B"];
 const LINE_COLORS = ["rgba(0,255,136,0.4)", "rgba(255,107,107,0.4)"];
 
 export default function CameraPreview() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const handLandmarkerRef = useRef<HandLandmarker | null>(null);
-  const animFrameRef = useRef<number>(0);
   const settingsRef = useRef(loadSettings());
-  const stateMachineRef = useRef(new GestureStateMachine({
-    confidenceThreshold: settingsRef.current.confidenceThreshold,
-  }));
   const mappingsRef = useRef<GestureMapping[]>(loadMappings() ?? DEFAULT_MAPPINGS);
   const templatesRef = useRef<GestureTemplate[]>(loadTemplates());
   const lastEmittedState = useRef("");
 
-  const [gestures, setGestures] = useState<GestureResult[]>([]);
+  const [gestures, setGestures] = useState<SidecarGesture[]>([]);
   const [mappings, setMappings] = useState<GestureMapping[]>(mappingsRef.current);
   const [templates, setTemplates] = useState<GestureTemplate[]>(templatesRef.current);
   const [showAssign, setShowAssign] = useState(false);
-  const latestLandmarksRef = useRef<import("@mediapipe/tasks-vision").NormalizedLandmark[] | null>(null);
-  const [machineOutput, setMachineOutput] = useState<StateMachineOutput>({
-    state: "idle",
-    firedGesture: null,
-    holdDurationMs: 0,
-    cooldownRemainingMs: 0,
-  });
+  const [machineState, setMachineState] = useState("idle");
+  const [firedGesture, setFiredGesture] = useState<string | null>(null);
   const [fps, setFps] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [sidecarStatus, setSidecarStatus] = useState<string>("connecting");
   const [error, setError] = useState<string | null>(null);
 
-  const lastFrameTime = useRef(0);
-  const frameCount = useRef(0);
-  const fpsInterval = useRef(0);
-  const canvasSized = useRef(false);
-  const idleFrames = useRef(0); // count consecutive no-hand frames
-  const prevGestureKey = useRef(""); // track gesture changes to avoid redundant setState
-  const prevMachineState = useRef("");
-
-  // Initialize MediaPipe
-  useEffect(() => {
-    let cancelled = false;
-
-    async function init() {
-      try {
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-        );
-
-        const handLandmarker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          numHands: 2,
-          minHandDetectionConfidence: 0.5,
-          minHandPresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
-
-        if (!cancelled) {
-          handLandmarkerRef.current = handLandmarker;
-        }
-      } catch (e) {
-        if (!cancelled) {
-          console.error("Failed to init MediaPipe:", e);
-          setError("Failed to initialize hand tracking. Check console for details.");
-        }
-      }
-    }
-
-    init();
-    return () => { cancelled = true; };
+  // Send templates to sidecar whenever they change
+  const sendTemplatesToSidecar = useCallback((tpls: GestureTemplate[]) => {
+    const msg = JSON.stringify({
+      cmd: "set_templates",
+      templates: tpls.map(t => ({ name: t.name, landmarks: t.landmarks })),
+    });
+    invoke("sidecar_send", { message: msg }).catch(console.error);
   }, []);
+
+  // Send config to sidecar
+  useEffect(() => {
+    const msg = JSON.stringify({
+      cmd: "set_config",
+      config: {
+        confidenceThreshold: settingsRef.current.confidenceThreshold,
+      },
+    });
+    invoke("sidecar_send", { message: msg }).catch(() => {});
+  }, []);
+
+  // Send initial templates
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      sendTemplatesToSidecar(templatesRef.current);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [sendTemplatesToSidecar]);
 
   // Manage overlay HUD window
   useEffect(() => {
@@ -109,202 +97,164 @@ export default function CameraPreview() {
     };
   }, []);
 
-  // Start camera
+  // Start local camera preview (display only — sidecar does the processing)
   useEffect(() => {
     let stream: MediaStream | null = null;
     let cancelled = false;
 
-    async function startCamera() {
+    async function startPreview() {
       try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          setError("getUserMedia not supported in this webview.");
-          return;
-        }
-
         stream = await navigator.mediaDevices.getUserMedia({
-          video: settingsRef.current.cameraDeviceId
-            ? { deviceId: { exact: settingsRef.current.cameraDeviceId }, width: 640, height: 480 }
-            : { width: 640, height: 480 },
+          video: { width: 640, height: 480 },
         });
-
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
-
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          try {
-            await videoRef.current.play();
-          } catch (playErr: any) {
-            // Ignore AbortError from StrictMode double-mount
-            if (playErr.name === "AbortError") return;
-            throw playErr;
-          }
-          setLoading(false);
+          videoRef.current.play().catch(() => {});
         }
-      } catch (e: any) {
-        if (cancelled) return;
-        console.error("Camera error:", e);
-        setError(`Camera error: ${e.name} — ${e.message}`);
+      } catch (e) {
+        // Camera preview is optional — sidecar still works without it
+        console.warn("Camera preview unavailable:", e);
       }
     }
 
-    startCamera();
+    startPreview();
     return () => {
       cancelled = true;
       stream?.getTracks().forEach((t) => t.stop());
     };
   }, []);
 
-  // Detection function
-  const detect = useCallback(() => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const handLandmarker = handLandmarkerRef.current;
-
-    if (!video || !canvas || !handLandmarker || video.readyState < 2) {
-      animFrameRef.current = requestAnimationFrame(detect);
-      return;
-    }
-
-    const now = performance.now();
-
-    // FPS counter
-    frameCount.current++;
-    if (now - fpsInterval.current >= 1000) {
-      setFps(frameCount.current);
-      frameCount.current = 0;
-      fpsInterval.current = now;
-    }
-
-    // Adaptive frame interval: 15fps active, 5fps idle (no hands)
-    const interval = idleFrames.current > 30 ? 200 : 66; // 5fps idle, ~15fps active
-    if (now - lastFrameTime.current < interval) {
-      animFrameRef.current = requestAnimationFrame(detect);
-      return;
-    }
-    lastFrameTime.current = now;
-
-    let results: HandLandmarkerResult;
-    try {
-      results = handLandmarker.detectForVideo(video, now);
-    } catch {
-      animFrameRef.current = requestAnimationFrame(detect);
-      return;
-    }
-
-    // Draw — only resize canvas once
-    const ctx = canvas.getContext("2d")!;
-    if (!canvasSized.current || canvas.width !== video.videoWidth) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      canvasSized.current = true;
-    } else {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-
-    const newGestures: GestureResult[] = [];
-
-    if (results.landmarks) {
-      for (let i = 0; i < results.landmarks.length; i++) {
-        const landmarks = results.landmarks[i];
-        const handedness =
-          results.handednesses?.[i]?.[0]?.categoryName ?? "Unknown";
-        const color = DOT_COLORS[i % DOT_COLORS.length];
-        const lineColor = LINE_COLORS[i % LINE_COLORS.length];
-
-        // Draw connections
-        ctx.strokeStyle = lineColor;
-        ctx.lineWidth = 2;
-        for (const [a, b] of HAND_CONNECTIONS) {
-          const lmA = landmarks[a];
-          const lmB = landmarks[b];
-          ctx.beginPath();
-          ctx.moveTo(lmA.x * canvas.width, lmA.y * canvas.height);
-          ctx.lineTo(lmB.x * canvas.width, lmB.y * canvas.height);
-          ctx.stroke();
-        }
-
-        // Draw landmarks
-        for (const lm of landmarks) {
-          ctx.beginPath();
-          ctx.arc(
-            lm.x * canvas.width,
-            lm.y * canvas.height,
-            5,
-            0,
-            2 * Math.PI
-          );
-          ctx.fillStyle = color;
-          ctx.fill();
-        }
-
-        // Classify
-        const gesture = classifyGesture(landmarks, i, handedness, templatesRef.current);
-        newGestures.push(gesture);
-
-        // Track raw landmarks for assign modal (use first hand)
-        if (i === 0) {
-          latestLandmarksRef.current = landmarks;
-        }
-      }
-    }
-
-    if (newGestures.length === 0) {
-      latestLandmarksRef.current = null;
-      idleFrames.current++;
-    } else {
-      idleFrames.current = 0;
-    }
-
-    // Only update React state when gesture info actually changes
-    const gestureKey = newGestures.map(g => `${g.gesture}:${g.handedness}`).join(",");
-    if (gestureKey !== prevGestureKey.current) {
-      prevGestureKey.current = gestureKey;
-      setGestures(newGestures);
-    }
-
-    // Update state machine (skip if assigning)
-    const output = stateMachineRef.current.update(newGestures, now);
-    const machineKey = `${output.state}:${output.firedGesture || ""}`;
-    if (machineKey !== prevMachineState.current) {
-      prevMachineState.current = machineKey;
-      setMachineOutput(output);
-    }
-
-    // If a gesture was just fired and we're not in assign mode, dispatch
-    if (output.firedGesture) {
-      console.log(`🔥 FIRED: ${output.firedGesture}`);
-      dispatchGesture(output.firedGesture, mappingsRef.current).catch(console.error);
-    }
-
-    // Emit state to overlay HUD (only on changes)
-    if (machineKey !== lastEmittedState.current) {
-      lastEmittedState.current = machineKey;
-      emitTo("overlay", "gesture-state", {
-        state: output.state,
-        firedGesture: output.firedGesture,
-      }).catch(() => {});
-    }
-
-    animFrameRef.current = requestAnimationFrame(detect);
-  }, []);
-
-  // Start detection loop once everything is ready
+  // Listen to sidecar events
   useEffect(() => {
-    if (!loading) {
-      animFrameRef.current = requestAnimationFrame(detect);
-    }
+    const unlisteners: Promise<UnlistenFn>[] = [];
+
+    // Landmarks — draw on canvas
+    unlisteners.push(
+      listen<any>("sidecar:landmarks", (event) => {
+        const data = event.payload;
+        const hands = data.hands;
+        if (!canvasRef.current) return;
+
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        if (canvas.width !== 640) {
+          canvas.width = 640;
+          canvas.height = 480;
+        }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // If no hands, clear gestures too
+        if (!hands || hands.length === 0) {
+          setGestures([]);
+          return;
+        }
+
+        for (let i = 0; i < hands.length; i++) {
+          const landmarks: number[][] = hands[i].landmarks;
+          if (!landmarks || landmarks.length !== 21) continue;
+
+          const color = DOT_COLORS[i % DOT_COLORS.length];
+          const lineColor = LINE_COLORS[i % LINE_COLORS.length];
+
+          ctx.strokeStyle = lineColor;
+          ctx.lineWidth = 2;
+          for (const [a, b] of HAND_CONNECTIONS) {
+            const lmA = landmarks[a];
+            const lmB = landmarks[b];
+            ctx.beginPath();
+            ctx.moveTo(lmA[0] * canvas.width, lmA[1] * canvas.height);
+            ctx.lineTo(lmB[0] * canvas.width, lmB[1] * canvas.height);
+            ctx.stroke();
+          }
+
+          for (const lm of landmarks) {
+            ctx.beginPath();
+            ctx.arc(lm[0] * canvas.width, lm[1] * canvas.height, 5, 0, 2 * Math.PI);
+            ctx.fillStyle = color;
+            ctx.fill();
+          }
+        }
+      })
+    );
+
+    // Gesture events
+    unlisteners.push(
+      listen<SidecarGesture>("sidecar:gesture", (event) => {
+        const g = event.payload;
+        if (g.gesture !== "none") {
+          setGestures((prev) => {
+            const updated = prev.filter((p) => p.handIndex !== g.handIndex);
+            updated.push(g);
+            return updated;
+          });
+        }
+      })
+    );
+
+    // State machine events
+    unlisteners.push(
+      listen<SidecarState>("sidecar:state", (event) => {
+        const s = event.payload;
+        setMachineState(s.state);
+
+        if (s.firedGesture) {
+          setFiredGesture(s.firedGesture);
+          dispatchGesture(s.firedGesture, mappingsRef.current).catch(console.error);
+          setTimeout(() => setFiredGesture(null), 2000);
+        }
+
+        const key = `${s.state}:${s.firedGesture || ""}`;
+        if (key !== lastEmittedState.current) {
+          lastEmittedState.current = key;
+          emitTo("overlay", "gesture-state", {
+            state: s.state,
+            firedGesture: s.firedGesture,
+          }).catch(() => {});
+        }
+      })
+    );
+
+    // Status events
+    unlisteners.push(
+      listen<SidecarStatus>("sidecar:status", (event) => {
+        setFps(event.payload.fps);
+        setSidecarStatus(event.payload.camera);
+      })
+    );
+
+    // Error events
+    unlisteners.push(
+      listen<any>("sidecar:error", (event) => {
+        setError(event.payload.message);
+      })
+    );
+
+    // Sidecar terminated
+    unlisteners.push(
+      listen<any>("sidecar:terminated", () => {
+        setSidecarStatus("terminated");
+      })
+    );
+
     return () => {
-      cancelAnimationFrame(animFrameRef.current);
+      unlisteners.forEach((p) => p.then((fn) => fn()));
     };
-  }, [loading, detect]);
+  }, []);
 
   if (error) {
     return (
       <div style={styles.errorContainer}>
         <p style={styles.errorText}>{error}</p>
+        <p style={{ color: "#888", fontSize: 14, fontFamily: "monospace", marginTop: 8 }}>
+          Check that camera permissions are granted
+        </p>
       </div>
     );
   }
@@ -320,9 +270,14 @@ export default function CameraPreview() {
         />
         <canvas ref={canvasRef} style={styles.canvas} />
 
-        {/* FPS counter + Settings gear */}
         <div style={styles.topLeft}>
           <div style={styles.fpsCounter}>{fps} FPS</div>
+          <div style={{
+            ...styles.statusBadge,
+            background: sidecarStatus === "running" ? "rgba(0,255,136,0.3)" : "rgba(255,107,107,0.3)",
+          }}>
+            {sidecarStatus === "running" ? "● Camera" : sidecarStatus}
+          </div>
           <button
             style={styles.gearBtn}
             onClick={() => { window.location.hash = "#/settings"; }}
@@ -332,17 +287,12 @@ export default function CameraPreview() {
           </button>
         </div>
 
-        {/* Gesture labels */}
         <div style={styles.gesturePanel}>
-          {gestures.length === 0 && !loading && (
+          {gestures.length === 0 && (
             <div style={styles.gestureLabel}>No hands detected</div>
           )}
           {gestures.map((g, i) => (
             <div key={i} style={styles.gestureLabel}>
-              <span style={{ color: DOT_COLORS[i % DOT_COLORS.length] }}>
-                {g.handedness}
-              </span>
-              :{" "}
               <strong>
                 {g.gesture === "none" ? "—" : g.gesture.replace("_", " ")}
               </strong>
@@ -356,33 +306,28 @@ export default function CameraPreview() {
           ))}
         </div>
 
-        {/* State machine status */}
         <div style={styles.statePanel}>
           <div style={{
             ...styles.stateBadge,
-            background: machineOutput.state === "armed" ? "rgba(0,255,136,0.8)"
-              : machineOutput.state === "fired" ? "rgba(255,200,0,0.9)"
-              : machineOutput.state === "cooldown" ? "rgba(255,107,107,0.7)"
+            background: machineState === "armed" ? "rgba(0,255,136,0.8)"
+              : machineState === "fired" ? "rgba(255,200,0,0.9)"
+              : machineState === "cooldown" ? "rgba(255,107,107,0.7)"
               : "rgba(255,255,255,0.15)",
-            color: machineOutput.state === "idle" ? "#888" : "#000",
+            color: machineState === "idle" ? "#888" : "#000",
           }}>
-            {machineOutput.state.toUpperCase()}
+            {machineState.toUpperCase()}
           </div>
-          {machineOutput.firedGesture && (
+          {firedGesture && (
             <div style={styles.firedLabel}>
-              ⚡ {machineOutput.firedGesture.replace("_", " ")}
+              ⚡ {firedGesture.replace("_", " ")}
             </div>
           )}
         </div>
 
-        {/* Assign gesture button + mapping list */}
         <div style={styles.bottomBar}>
           <button
             style={styles.assignBtn}
-            onClick={() => {
-              stateMachineRef.current.reset();
-              setShowAssign(true);
-            }}
+            onClick={() => setShowAssign(true)}
           >
             + Assign Gesture
           </button>
@@ -400,11 +345,11 @@ export default function CameraPreview() {
                     mappingsRef.current = updatedMappings;
                     saveMappings(updatedMappings);
 
-                    // Also remove template with same name
                     const updatedTemplates = templates.filter((t) => t.name !== m.gesture);
                     setTemplates(updatedTemplates);
                     templatesRef.current = updatedTemplates;
                     saveTemplates(updatedTemplates);
+                    sendTemplatesToSidecar(updatedTemplates);
                   }}
                 >
                   ×
@@ -414,19 +359,16 @@ export default function CameraPreview() {
           </div>
         </div>
 
-        {/* Assign gesture modal */}
         {showAssign && (
           <AssignGesture
-            currentLandmarks={latestLandmarksRef.current}
             onSave={(template, mapping) => {
-              // Store the template
               const updatedTemplates = templates.filter((t) => t.name !== template.name);
               updatedTemplates.push(template);
               setTemplates(updatedTemplates);
               templatesRef.current = updatedTemplates;
               saveTemplates(updatedTemplates);
+              sendTemplatesToSidecar(updatedTemplates);
 
-              // Store the mapping
               const updatedMappings = mappings.filter((m) => m.gesture !== mapping.gesture);
               updatedMappings.push(mapping);
               setMappings(updatedMappings);
@@ -439,9 +381,9 @@ export default function CameraPreview() {
           />
         )}
 
-        {loading && (
+        {sidecarStatus === "connecting" && (
           <div style={styles.loadingOverlay}>
-            <p>Initializing hand tracking...</p>
+            <p>Starting hand tracking sidecar...</p>
           </div>
         )}
       </div>
@@ -468,7 +410,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100%",
     height: "100%",
     objectFit: "cover",
-    transform: "scaleX(-1)", // mirror
+    transform: "scaleX(-1)",
   },
   canvas: {
     position: "absolute",
@@ -476,7 +418,7 @@ const styles: Record<string, React.CSSProperties> = {
     left: 0,
     width: "100%",
     height: "100%",
-    transform: "scaleX(-1)", // mirror to match video
+    transform: "scaleX(-1)",
     pointerEvents: "none",
   },
   fpsCounter: {
@@ -484,6 +426,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     fontFamily: "monospace",
     background: "rgba(0,0,0,0.6)",
+    padding: "4px 8px",
+    borderRadius: 4,
+  },
+  statusBadge: {
+    color: "#fff",
+    fontSize: 12,
+    fontFamily: "monospace",
     padding: "4px 8px",
     borderRadius: 4,
   },
@@ -539,6 +488,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: "100vw",
     height: "100vh",
     display: "flex",
+    flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
     background: "#0a0a0a",

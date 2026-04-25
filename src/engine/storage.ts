@@ -1,8 +1,8 @@
 import { GestureMapping } from "./actionDispatcher";
 import { GestureTemplate } from "./gestureClassifier";
 
-const MAPPINGS_KEY = "vision-gesture-mappings";
-const TEMPLATES_KEY = "vision-gesture-templates";
+const MAPPINGS_KEY = "gestus-gesture-mappings";
+const TEMPLATES_KEY = "gestus-gesture-templates";
 
 export function loadMappings(): GestureMapping[] | null {
   try {

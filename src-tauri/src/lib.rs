@@ -174,7 +174,7 @@ pub fn run() {
         .setup(|app| {
             // System tray
             let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit Vision", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit Gestus", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
             TrayIconBuilder::new()
@@ -210,10 +210,10 @@ pub fn run() {
                     let state = app.state::<Mutex<SidecarState>>();
                     let mut s = state.lock().unwrap();
                     s.child = Some(child);
-                    println!("[vision] Sidecar spawned successfully");
+                    println!("[gestus] Sidecar spawned successfully");
                 }
                 Err(e) => {
-                    eprintln!("[vision] Failed to spawn sidecar: {}", e);
+                    eprintln!("[gestus] Failed to spawn sidecar: {}", e);
                     // Non-fatal: app can still work for settings UI
                 }
             }

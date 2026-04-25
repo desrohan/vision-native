@@ -1,19 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { NormalizedLandmark } from "@mediapipe/tasks-vision";
-import { normalizeLandmarks, GestureTemplate } from "../engine/gestureClassifier";
+import { listen } from "@tauri-apps/api/event";
+import { GestureTemplate } from "../engine/gestureClassifier";
 import { GestureMapping } from "../engine/actionDispatcher";
 
 type Step = "capture" | "name" | "choose" | "shortcut" | "app";
 
 interface Props {
-  /** Live landmarks from camera (null if no hand) */
-  currentLandmarks: NormalizedLandmark[] | null;
   onSave: (template: GestureTemplate, mapping: GestureMapping) => void;
   onCancel: () => void;
 }
 
-export default function AssignGesture({ currentLandmarks, onSave, onCancel }: Props) {
+export default function AssignGesture({ onSave, onCancel }: Props) {
   const [step, setStep] = useState<Step>("capture");
   const [countdown, setCountdown] = useState(3);
   const [capturedLandmarks, setCapturedLandmarks] = useState<number[] | null>(null);
@@ -22,16 +20,11 @@ export default function AssignGesture({ currentLandmarks, onSave, onCancel }: Pr
   const [apps, setApps] = useState<string[]>([]);
   const [appSearch, setAppSearch] = useState("");
   const [loadingApps, setLoadingApps] = useState(false);
-  const [hasHand, setHasHand] = useState(false);
+  const [waitingForCapture, setWaitingForCapture] = useState(false);
 
-  // Track if hand is present
+  // Step 1: Countdown then request sidecar to capture template
   useEffect(() => {
-    setHasHand(currentLandmarks !== null && currentLandmarks.length === 21);
-  }, [currentLandmarks]);
-
-  // Step 1: Countdown timer for gesture capture
-  useEffect(() => {
-    if (step !== "capture" || !hasHand) return;
+    if (step !== "capture") return;
 
     setCountdown(3);
     const interval = window.setInterval(() => {
@@ -45,16 +38,32 @@ export default function AssignGesture({ currentLandmarks, onSave, onCancel }: Pr
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [step, hasHand]);
+  }, [step]);
 
-  // Capture when countdown hits 0
+  // When countdown hits 0, send capture command to sidecar
   useEffect(() => {
-    if (step === "capture" && countdown === 0 && currentLandmarks && currentLandmarks.length === 21) {
-      const normalized = normalizeLandmarks(currentLandmarks);
-      setCapturedLandmarks(normalized);
-      setStep("name");
+    if (step === "capture" && countdown === 0 && !waitingForCapture) {
+      setWaitingForCapture(true);
+      const msg = JSON.stringify({ cmd: "capture_template" });
+      invoke("sidecar_send", { message: msg }).catch(console.error);
     }
-  }, [countdown, step, currentLandmarks]);
+  }, [countdown, step, waitingForCapture]);
+
+  // Listen for template_captured event from sidecar
+  useEffect(() => {
+    const unlisten = listen<any>("sidecar:template_captured", (event) => {
+      const landmarks = event.payload.landmarks as number[];
+      if (landmarks && landmarks.length === 63) {
+        setCapturedLandmarks(landmarks);
+        setStep("name");
+        setWaitingForCapture(false);
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   // Load apps when entering app step
   useEffect(() => {
@@ -145,12 +154,12 @@ export default function AssignGesture({ currentLandmarks, onSave, onCancel }: Pr
           <>
             <h2 style={styles.title}>Hold Your Gesture</h2>
             <p style={styles.subtitle}>
-              {hasHand
-                ? "Hand detected — hold steady!"
-                : "Show your hand to the camera..."}
+              {waitingForCapture
+                ? "Capturing..."
+                : "Show your hand to the camera and hold steady!"}
             </p>
             <div style={styles.countdown}>
-              {!hasHand ? "👋" : countdown > 0 ? countdown : "✓"}
+              {waitingForCapture ? "📸" : countdown > 0 ? countdown : "✓"}
             </div>
             <p style={styles.hint}>
               Make any hand shape you want (open palm is reserved for activation)
@@ -178,7 +187,7 @@ export default function AssignGesture({ currentLandmarks, onSave, onCancel }: Pr
               }}
             />
             <div style={styles.choiceRow}>
-              <button style={styles.cancelBtn} onClick={() => { setStep("capture"); setCountdown(3); }}>
+              <button style={styles.cancelBtn} onClick={() => { setStep("capture"); setCountdown(3); setWaitingForCapture(false); }}>
                 ← Recapture
               </button>
               <button
@@ -307,16 +316,15 @@ const styles: Record<string, React.CSSProperties> = {
   },
   modal: {
     background: "#1a1a1a",
-    border: "1px solid #333",
-    borderRadius: 12,
-    padding: "32px",
-    width: 420,
-    maxHeight: "80vh",
+    borderRadius: 16,
+    padding: "32px 40px",
+    minWidth: 380,
+    maxWidth: 480,
     display: "flex",
     flexDirection: "column",
     alignItems: "center",
     gap: 16,
-    overflowY: "auto",
+    border: "1px solid #333",
   },
   title: {
     color: "#fff",
@@ -326,35 +334,48 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: "center",
   },
   subtitle: {
-    color: "#999",
+    color: "#aaa",
     fontSize: 14,
     fontFamily: "monospace",
     margin: 0,
     textAlign: "center",
   },
+  countdown: {
+    fontSize: 64,
+    fontFamily: "monospace",
+    fontWeight: 700,
+    color: "#00FF88",
+    margin: "16px 0",
+  },
   hint: {
     color: "#666",
     fontSize: 12,
     fontFamily: "monospace",
-    margin: 0,
+    textAlign: "center",
+  },
+  cancelBtn: {
+    background: "transparent",
+    border: "1px solid #444",
+    borderRadius: 8,
+    color: "#aaa",
+    fontSize: 13,
+    fontFamily: "monospace",
+    padding: "8px 16px",
+    cursor: "pointer",
+  },
+  saveBtn: {
+    background: "#00FF88",
+    border: "none",
+    borderRadius: 8,
+    color: "#000",
+    fontSize: 13,
+    fontFamily: "monospace",
+    fontWeight: 700,
+    padding: "8px 20px",
+    cursor: "pointer",
   },
   highlight: {
     color: "#00FF88",
-  },
-  countdown: {
-    color: "#00FF88",
-    fontSize: 64,
-    fontFamily: "monospace",
-    fontWeight: 700,
-  },
-  currentGesture: {
-    color: "#FFD700",
-    fontSize: 18,
-    fontFamily: "monospace",
-    fontWeight: 600,
-    background: "rgba(255,215,0,0.1)",
-    padding: "8px 16px",
-    borderRadius: 6,
   },
   choiceRow: {
     display: "flex",
@@ -362,38 +383,15 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: 8,
   },
   choiceBtn: {
-    background: "#2a2a2a",
+    background: "#222",
     border: "1px solid #444",
-    borderRadius: 8,
+    borderRadius: 12,
     color: "#fff",
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: "monospace",
     padding: "16px 24px",
     cursor: "pointer",
-    transition: "border-color 0.2s",
-  },
-  cancelBtn: {
-    background: "transparent",
-    border: "1px solid #555",
-    borderRadius: 6,
-    color: "#888",
-    fontSize: 14,
-    fontFamily: "monospace",
-    padding: "8px 20px",
-    cursor: "pointer",
-    marginTop: 8,
-  },
-  saveBtn: {
-    background: "#00FF88",
-    border: "none",
-    borderRadius: 6,
-    color: "#000",
-    fontSize: 14,
-    fontFamily: "monospace",
-    fontWeight: 700,
-    padding: "8px 24px",
-    cursor: "pointer",
-    marginTop: 8,
+    transition: "background 0.15s",
   },
   keyDisplay: {
     display: "flex",
@@ -402,57 +400,52 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "center",
     minHeight: 48,
     alignItems: "center",
-    padding: "12px",
-    background: "#111",
-    borderRadius: 8,
-    width: "100%",
   },
   keyBadge: {
     background: "#333",
-    border: "1px solid #555",
-    borderRadius: 6,
-    color: "#fff",
-    fontSize: 16,
+    color: "#00FF88",
     fontFamily: "monospace",
-    fontWeight: 600,
-    padding: "6px 14px",
+    fontSize: 18,
+    fontWeight: 700,
+    padding: "8px 14px",
+    borderRadius: 6,
+    border: "1px solid #555",
   },
   keyPlaceholder: {
     color: "#555",
-    fontSize: 14,
     fontFamily: "monospace",
+    fontSize: 14,
   },
   searchInput: {
     width: "100%",
-    padding: "10px 14px",
-    fontSize: 14,
-    fontFamily: "monospace",
     background: "#111",
-    border: "1px solid #444",
-    borderRadius: 6,
+    border: "1px solid #333",
+    borderRadius: 8,
     color: "#fff",
+    fontSize: 15,
+    fontFamily: "monospace",
+    padding: "10px 14px",
     outline: "none",
     boxSizing: "border-box",
   },
   appList: {
     width: "100%",
-    maxHeight: 300,
+    maxHeight: 240,
     overflowY: "auto",
     display: "flex",
     flexDirection: "column",
-    gap: 2,
+    gap: 4,
   },
   appItem: {
     background: "#222",
     border: "none",
-    borderRadius: 4,
+    borderRadius: 6,
     color: "#fff",
     fontSize: 14,
     fontFamily: "monospace",
     padding: "10px 14px",
     cursor: "pointer",
     textAlign: "left",
-    transition: "background 0.15s",
   },
   loadingText: {
     color: "#666",

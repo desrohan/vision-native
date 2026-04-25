@@ -95,7 +95,9 @@ enum InCommand {
                 debounceMs: configDict["debounceMs"] as? Double,
                 cooldownMs: configDict["cooldownMs"] as? Double,
                 confidenceThreshold: (configDict["confidenceThreshold"] as? NSNumber)?.floatValue,
-                cursorSmoothing: (configDict["cursorSmoothing"] as? NSNumber)?.floatValue
+                cursorSmoothing: (configDict["cursorSmoothing"] as? NSNumber)?.floatValue,
+                cursorHand: configDict["cursorHand"] as? String,
+                swipeEnabled: configDict["swipeEnabled"] as? Bool
             )
             return .setConfig(config: config)
 
@@ -123,6 +125,8 @@ struct ConfigUpdate {
     let cooldownMs: Double?
     let confidenceThreshold: Float?
     let cursorSmoothing: Float?
+    let cursorHand: String? // "left" or "right"
+    let swipeEnabled: Bool?
 }
 
 // MARK: - JSON Helpers

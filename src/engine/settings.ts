@@ -1,15 +1,21 @@
 export interface AppSettings {
-  cameraDeviceId: string;
   confidenceThreshold: number;
   showOverlayHUD: boolean;
+  cursorEnabled: boolean;
+  cursorSmoothing: number;
+  cursorHand: "left" | "right";
+  swipeEnabled: boolean;
 }
 
-const SETTINGS_KEY = "vision-app-settings";
+const SETTINGS_KEY = "gestus-app-settings";
 
 const DEFAULT_SETTINGS: AppSettings = {
-  cameraDeviceId: "",
   confidenceThreshold: 0.7,
   showOverlayHUD: false,
+  cursorEnabled: false,
+  cursorSmoothing: 0.7,
+  cursorHand: "right",
+  swipeEnabled: true,
 };
 
 export function loadSettings(): AppSettings {

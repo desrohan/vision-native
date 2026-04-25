@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Rust / Tauri build artifacts
+src-tauri/target/
+
+# Swift sidecar build artifacts
+src-tauri/sidecar/.build/

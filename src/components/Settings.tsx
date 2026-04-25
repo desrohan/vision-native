@@ -1,24 +1,36 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { loadSettings, saveSettings, AppSettings } from "../engine/settings";
 import { createOverlayWindow, destroyOverlayWindow } from "../engine/overlayManager";
 
 export default function Settings() {
   const [settings, setSettings] = useState<AppSettings>(loadSettings());
-  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
-
-  useEffect(() => {
-    navigator.mediaDevices
-      .enumerateDevices()
-      .then((devices) => {
-        setCameras(devices.filter((d) => d.kind === "videoinput"));
-      })
-      .catch(console.error);
-  }, []);
 
   const update = (partial: Partial<AppSettings>) => {
     const updated = { ...settings, ...partial };
     setSettings(updated);
     saveSettings(updated);
+
+    // Send config update to sidecar
+    const msg = JSON.stringify({
+      cmd: "set_config",
+      config: {
+        confidenceThreshold: updated.confidenceThreshold,
+        cursorSmoothing: updated.cursorSmoothing,
+        cursorHand: updated.cursorHand,
+        swipeEnabled: updated.swipeEnabled,
+      },
+    });
+    invoke("sidecar_send", { message: msg }).catch(console.error);
+
+    // Send cursor enable/disable
+    if ("cursorEnabled" in partial) {
+      const cursorMsg = JSON.stringify({
+        cmd: "set_cursor_enabled",
+        enabled: updated.cursorEnabled,
+      });
+      invoke("sidecar_send", { message: cursorMsg }).catch(console.error);
+    }
 
     // Handle overlay toggle
     if ("showOverlayHUD" in partial) {
@@ -47,21 +59,119 @@ export default function Settings() {
           <div style={{ width: 70 }} />
         </div>
 
-        {/* Camera */}
+        {/* Cursor Tracking */}
         <div style={styles.section}>
-          <h3 style={styles.sectionTitle}>Camera</h3>
-          <select
-            style={styles.select}
-            value={settings.cameraDeviceId}
-            onChange={(e) => update({ cameraDeviceId: e.target.value })}
-          >
-            <option value="">Default Camera</option>
-            {cameras.map((cam) => (
-              <option key={cam.deviceId} value={cam.deviceId}>
-                {cam.label || `Camera ${cam.deviceId.slice(0, 8)}`}
-              </option>
-            ))}
-          </select>
+          <h3 style={styles.sectionTitle}>Cursor Tracking</h3>
+          <div style={styles.toggleRow}>
+            <span style={styles.toggleLabel}>
+              Control cursor with hand position
+            </span>
+            <button
+              style={{
+                ...styles.toggle,
+                background: settings.cursorEnabled ? "#00FF88" : "#333",
+              }}
+              onClick={() =>
+                update({ cursorEnabled: !settings.cursorEnabled })
+              }
+            >
+              <div
+                style={{
+                  ...styles.toggleKnob,
+                  transform: settings.cursorEnabled
+                    ? "translateX(20px)"
+                    : "translateX(2px)",
+                }}
+              />
+            </button>
+          </div>
+          <p style={styles.hint}>
+            Move your index finger to control the mouse cursor.
+            Requires Accessibility permission in System Settings.
+          </p>
+          {settings.cursorEnabled && (
+            <>
+              <label style={{ ...styles.label, marginTop: 16 }}>
+                Cursor Smoothing:{" "}
+                <span style={styles.value}>
+                  {Math.round((settings.cursorSmoothing ?? 0.7) * 100)}%
+                </span>
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="0.95"
+                step="0.05"
+                value={settings.cursorSmoothing ?? 0.7}
+                onChange={(e) =>
+                  update({ cursorSmoothing: parseFloat(e.target.value) })
+                }
+                style={styles.slider}
+              />
+              <div style={styles.sliderLabels}>
+                <span>Responsive (0%)</span>
+                <span>Smooth (95%)</span>
+              </div>
+
+              <label style={{ ...styles.label, marginTop: 16 }}>
+                Tracking Hand
+              </label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {(["right", "left"] as const).map((hand) => (
+                  <button
+                    key={hand}
+                    style={{
+                      flex: 1,
+                      padding: "8px 12px",
+                      borderRadius: 6,
+                      border: settings.cursorHand === hand ? "1px solid #00FF88" : "1px solid #333",
+                      background: settings.cursorHand === hand ? "rgba(0,255,136,0.15)" : "#151515",
+                      color: settings.cursorHand === hand ? "#00FF88" : "#888",
+                      fontFamily: "monospace",
+                      fontSize: 13,
+                      cursor: "pointer",
+                      fontWeight: settings.cursorHand === hand ? 700 : 400,
+                    }}
+                    onClick={() => update({ cursorHand: hand })}
+                  >
+                    {hand === "right" ? "✋ Right" : "🤚 Left"}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Swipe Gestures */}
+        <div style={styles.section}>
+          <h3 style={styles.sectionTitle}>Swipe Gestures</h3>
+          <div style={styles.toggleRow}>
+            <span style={styles.toggleLabel}>
+              Swipe to switch desktops
+            </span>
+            <button
+              style={{
+                ...styles.toggle,
+                background: settings.swipeEnabled ? "#00FF88" : "#333",
+              }}
+              onClick={() =>
+                update({ swipeEnabled: !settings.swipeEnabled })
+              }
+            >
+              <div
+                style={{
+                  ...styles.toggleKnob,
+                  transform: settings.swipeEnabled
+                    ? "translateX(20px)"
+                    : "translateX(2px)",
+                }}
+              />
+            </button>
+          </div>
+          <p style={styles.hint}>
+            Swipe left or right with either hand to switch desktops.
+            Bunch fingers for Mission Control, spread for App Exposé.
+          </p>
         </div>
 
         {/* Confidence threshold */}
@@ -125,7 +235,7 @@ export default function Settings() {
         {/* About */}
         <div style={styles.section}>
           <h3 style={styles.sectionTitle}>About</h3>
-          <p style={styles.aboutText}>Vision v0.1.0</p>
+          <p style={styles.aboutText}>Gestus v0.1.0</p>
           <p style={styles.hint}>Gesture-based app launcher for macOS</p>
         </div>
       </div>

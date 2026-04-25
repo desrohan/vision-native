@@ -9,6 +9,9 @@ final class SidecarApp {
     private let classifier = GestureClassifier()
     private let stateMachine = GestureStateMachine()
     private let inputController = InputController()
+    private let leftGestureDetector = GestureDetector()
+    private let rightGestureDetector = GestureDetector()
+    private var swipeEnabled = true
 
     private var paused = false
     private var captureNextTemplate = false
@@ -58,9 +61,7 @@ final class SidecarApp {
         // Detect hands
         let hands = handTracker.detect(sampleBuffer: sampleBuffer)
 
-        guard !hands.isEmpty else { return }
-
-        // Emit landmarks (throttled)
+        // Emit landmarks (throttled) — send empty when no hands so frontend clears
         framesSinceLastEmit += 1
         if framesSinceLastEmit >= landmarkEmitInterval {
             framesSinceLastEmit = 0
@@ -69,6 +70,8 @@ final class SidecarApp {
             }
             sendOutput(.landmarks(hands: landmarkArrays))
         }
+
+        guard !hands.isEmpty else { return }
 
         // Template capture mode
         if captureNextTemplate, let firstHand = hands.first {
@@ -103,10 +106,66 @@ final class SidecarApp {
             holdDurationMs: output.holdDurationMs
         ))
 
-        // Cursor tracking: use index finger tip (landmark 8) of first hand
-        if let firstHand = hands.first {
-            let indexTip = firstHand.landmarks[8]
+        // Cursor hand moves the pointer; the OTHER hand handles pinch/click/drag
+        let actionHand = inputController.cursorHand == "Right" ? "Left" : "Right"
+
+        let cursorHandData = hands.first(where: { $0.handedness == inputController.cursorHand })
+        let actionHandData = hands.first(where: { $0.handedness == actionHand })
+
+        // Move cursor with the cursor hand's index finger tip (landmark 8)
+        if let ch = cursorHandData {
+            let indexTip = ch.landmarks[8]
             inputController.moveCursor(x: indexTip.x, y: indexTip.y)
+        }
+
+        // Pinch detection on the action hand
+        if let ah = actionHandData {
+            let thumbTip = ah.landmarks[4]
+            let indexTip = ah.landmarks[8]
+            inputController.updatePinch(
+                thumbTip: LandmarkPoint(x: thumbTip.x, y: thumbTip.y, z: thumbTip.z),
+                indexTip: LandmarkPoint(x: indexTip.x, y: indexTip.y, z: indexTip.z),
+                now: now
+            )
+        }
+
+        // Swipe and bunch detection (if enabled)
+        if swipeEnabled {
+            // Swipe detection — both hands, using per-hand detectors
+            for hand in hands {
+                let detector = hand.handedness == "Left" ? leftGestureDetector : rightGestureDetector
+                let wrist = hand.landmarks[0]
+                if let swipe = detector.updateSwipe(wristX: wrist.x, now: now) {
+                    switch swipe {
+                    case "swipe_left":
+                        GestureDetector.switchDesktopRight()
+                    case "swipe_right":
+                        GestureDetector.switchDesktopLeft()
+                    default: break
+                    }
+                }
+            }
+
+            // Fist detection — action hand only
+            if let ah = actionHandData {
+                let lm = ah.landmarks
+                if let action = (ah.handedness == "Left" ? leftGestureDetector : rightGestureDetector).updateFist(
+                    wrist: lm[0],
+                    indexTip: lm[8], indexMCP: lm[5],
+                    middleTip: lm[12], middleMCP: lm[9],
+                    ringTip: lm[16], ringMCP: lm[13],
+                    pinkyTip: lm[20], pinkyMCP: lm[17],
+                    now: now
+                ) {
+                    switch action {
+                    case "mission_control":
+                        GestureDetector.missionControl()
+                    case "app_expose":
+                        GestureDetector.appExpose()
+                    default: break
+                    }
+                }
+            }
         }
     }
 
@@ -149,6 +208,13 @@ final class SidecarApp {
             if let smoothing = config.cursorSmoothing {
                 inputController.smoothingFactor = CGFloat(smoothing)
             }
+            if let hand = config.cursorHand {
+                // Frontend sends "left"/"right", Vision uses "Left"/"Right"
+                inputController.cursorHand = hand.capitalized
+            }
+            if let swipe = config.swipeEnabled {
+                swipeEnabled = swipe
+            }
 
         case .captureTemplate:
             captureNextTemplate = true
@@ -177,6 +243,10 @@ final class SidecarApp {
 }
 
 // MARK: - Entry Point
+
+import AppKit
+// Prevent dock icon — this is a background sidecar process
+NSApplication.shared.setActivationPolicy(.prohibited)
 
 let app = SidecarApp()
 app.run()
