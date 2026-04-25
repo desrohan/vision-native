@@ -112,6 +112,7 @@ export class GestureStateMachine {
         // Immediately transition to cooldown
         this.state = "cooldown";
         this.cooldownStartTime = now;
+        this.firedGesture = null;
         break;
 
       case "cooldown":

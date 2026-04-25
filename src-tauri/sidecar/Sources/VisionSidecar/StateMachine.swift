@@ -86,6 +86,7 @@ final class GestureStateMachine {
         case .fired:
             state = .cooldown
             cooldownStartTime = now
+            firedGesture = nil
 
         case .cooldown:
             if now - cooldownStartTime >= config.cooldownMs {
