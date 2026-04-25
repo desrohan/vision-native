@@ -1,0 +1,42 @@
+{
+  "": {
+    "dependencies": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/vision_sidecar.d",
+    "object": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/vision_sidecar.o",
+    "swift-dependencies": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/master.swiftdeps"
+  },
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/CameraCapture.swift": {
+    "object": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/CameraCapture.swift.o",
+    "swiftmodule": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/CameraCapture~partial.swiftmodule",
+    "swift-dependencies": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/CameraCapture.swiftdeps"
+  },
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/GestureClassifier.swift": {
+    "object": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/GestureClassifier.swift.o",
+    "swiftmodule": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/GestureClassifier~partial.swiftmodule",
+    "swift-dependencies": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/GestureClassifier.swiftdeps"
+  },
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/HandTracker.swift": {
+    "object": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/HandTracker.swift.o",
+    "swiftmodule": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/HandTracker~partial.swiftmodule",
+    "swift-dependencies": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/HandTracker.swiftdeps"
+  },
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/InputController.swift": {
+    "object": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/InputController.swift.o",
+    "swiftmodule": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/InputController~partial.swiftmodule",
+    "swift-dependencies": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/InputController.swiftdeps"
+  },
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/Protocol.swift": {
+    "object": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/Protocol.swift.o",
+    "swiftmodule": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/Protocol~partial.swiftmodule",
+    "swift-dependencies": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/Protocol.swiftdeps"
+  },
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/StateMachine.swift": {
+    "object": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/StateMachine.swift.o",
+    "swiftmodule": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/StateMachine~partial.swiftmodule",
+    "swift-dependencies": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/StateMachine.swiftdeps"
+  },
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/main.swift": {
+    "object": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/main.swift.o",
+    "swiftmodule": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/release/vision_sidecar.build/main.swiftdeps"
+  }
+}

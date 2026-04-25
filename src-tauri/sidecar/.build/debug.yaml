@@ -1,0 +1,81 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<vision-sidecar-arm64-apple-macosx15.0-debug.exe>","<vision-sidecar-arm64-apple-macosx15.0-debug.module>"]
+  "test": ["<vision-sidecar-arm64-apple-macosx15.0-debug.exe>","<vision-sidecar-arm64-apple-macosx15.0-debug.module>"]
+  "vision-sidecar-arm64-apple-macosx15.0-debug.exe": ["<vision-sidecar-arm64-apple-macosx15.0-debug.exe>"]
+  "vision-sidecar-arm64-apple-macosx15.0-debug.module": ["<vision-sidecar-arm64-apple-macosx15.0-debug.module>"]
+default: "main"
+nodes:
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar":
+    is-mutated: true
+commands:
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Library/Developer/CommandLineTools/usr/bin/swiftc"]
+    outputs: ["/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar-entitlement.plist":
+    tool: write-auxiliary-file
+    inputs: ["<entitlement-plist>","<com.apple.security.get-task-allow>"]
+    outputs: ["/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar-entitlement.plist"]
+    description: "Write auxiliary file /Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar-entitlement.plist"
+
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/CameraCapture.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/GestureClassifier.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/HandTracker.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/InputController.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/Protocol.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/StateMachine.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/main.swift.o"]
+    outputs: ["/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar.product/Objects.LinkFileList"
+
+  "/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/CameraCapture.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/GestureClassifier.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/HandTracker.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/InputController.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/Protocol.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/StateMachine.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/main.swift"]
+    outputs: ["/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/sources"]
+    description: "Write auxiliary file /Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/sources"
+
+  "<vision-sidecar-arm64-apple-macosx15.0-debug.exe>":
+    tool: phony
+    inputs: ["<vision-sidecar-arm64-apple-macosx15.0-debug.exe-CodeSigning>"]
+    outputs: ["<vision-sidecar-arm64-apple-macosx15.0-debug.exe>"]
+
+  "<vision-sidecar-arm64-apple-macosx15.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/CameraCapture.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/GestureClassifier.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/HandTracker.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/InputController.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/Protocol.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/StateMachine.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/main.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/Modules/vision_sidecar.swiftmodule"]
+    outputs: ["<vision-sidecar-arm64-apple-macosx15.0-debug.module>"]
+
+  "C.vision-sidecar-arm64-apple-macosx15.0-debug.exe":
+    tool: shell
+    inputs: ["/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/CameraCapture.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/GestureClassifier.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/HandTracker.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/InputController.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/Protocol.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/StateMachine.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/main.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar.product/Objects.LinkFileList"]
+    outputs: ["/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/vision-sidecar"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-L","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug","-o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar","-module-name","vision_sidecar","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-alias","-Xlinker","_vision_sidecar_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar.product/Objects.LinkFileList","-target","arm64-apple-macosx14.0","-framework","AVFoundation","-framework","Vision","-framework","CoreGraphics","-framework","AppKit","-Xlinker","-add_ast_path","-Xlinker","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/Modules/vision_sidecar.swiftmodule","-F","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xlinker","-rpath","-Xlinker","/Library/Developer/CommandLineTools/Library/Developer/Frameworks"]
+
+  "C.vision-sidecar-arm64-apple-macosx15.0-debug.exe-entitlements":
+    tool: shell
+    inputs: ["/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar-entitlement.plist"]
+    outputs: ["<vision-sidecar-arm64-apple-macosx15.0-debug.exe-CodeSigning>"]
+    description: "Applying debug entitlements to ./.build/arm64-apple-macosx/debug/vision-sidecar"
+    args: ["codesign","--force","--sign","-","--entitlements","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar-entitlement.plist","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision-sidecar"]
+
+  "C.vision-sidecar-arm64-apple-macosx15.0-debug.module":
+    tool: shell
+    inputs: ["/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/CameraCapture.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/GestureClassifier.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/HandTracker.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/InputController.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/Protocol.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/StateMachine.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/main.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/sources"]
+    outputs: ["/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/CameraCapture.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/GestureClassifier.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/HandTracker.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/InputController.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/Protocol.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/StateMachine.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/main.swift.o","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/Modules/vision_sidecar.swiftmodule"]
+    description: "Compiling Swift Module 'vision_sidecar' (7 sources)"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-module-name","vision_sidecar","-emit-dependencies","-emit-module","-emit-module-path","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/Modules/vision_sidecar.swiftmodule","-output-file-map","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/output-file-map.json","-incremental","-c","@/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/vision_sidecar.build/sources","-I","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx14.0","-enable-batch-mode","-index-store-path","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j10","-DSWIFT_PACKAGE","-DDEBUG","-module-cache-path","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","vision_sidecar_main","-swift-version","5","-F","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xcc","-isysroot","-Xcc","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-Xcc","-fPIC","-Xcc","-g","-package-name","sidecar"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Sources/VisionSidecar/","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Package.swift","/Users/shahrohan/Projects/Vision-native/src-tauri/sidecar/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

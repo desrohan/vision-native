@@ -1,10 +1,18 @@
-use std::process::Command;
+use std::process::Command as StdCommand;
 use std::fs;
+use std::sync::Mutex;
 use tauri::{
     tray::TrayIconBuilder,
     menu::{Menu, MenuItem},
-    Manager, WindowEvent,
+    Manager, State, WindowEvent, Emitter,
 };
+use tauri_plugin_shell::{ShellExt, process::CommandChild};
+use serde_json::Value;
+
+/// Holds the sidecar child process so we can write to its stdin and kill it.
+struct SidecarState {
+    child: Option<CommandChild>,
+}
 
 #[tauri::command]
 fn get_installed_apps() -> Result<Vec<String>, String> {
@@ -27,7 +35,7 @@ fn get_installed_apps() -> Result<Vec<String>, String> {
 
 #[tauri::command]
 fn launch_app(path: String) -> Result<String, String> {
-    Command::new("open")
+    StdCommand::new("open")
         .arg("-a")
         .arg(&path)
         .spawn()
@@ -37,7 +45,7 @@ fn launch_app(path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn open_url(url: String) -> Result<String, String> {
-    Command::new("open")
+    StdCommand::new("open")
         .arg(&url)
         .spawn()
         .map_err(|e| format!("Failed to open URL {}: {}", url, e))?;
@@ -46,8 +54,6 @@ fn open_url(url: String) -> Result<String, String> {
 
 #[tauri::command]
 fn send_keyboard_shortcut(keys: String) -> Result<String, String> {
-    // Use AppleScript for reliable key simulation on macOS
-    // keys format: "cmd+shift+p"
     let parts: Vec<&str> = keys.split('+').map(|s| s.trim()).collect();
 
     let mut modifiers = Vec::new();
@@ -74,7 +80,7 @@ fn send_keyboard_shortcut(keys: String) -> Result<String, String> {
         key_char, modifier_str
     );
 
-    Command::new("osascript")
+    StdCommand::new("osascript")
         .arg("-e")
         .arg(&script)
         .output()
@@ -83,15 +89,87 @@ fn send_keyboard_shortcut(keys: String) -> Result<String, String> {
     Ok(format!("Sent shortcut: {}", keys))
 }
 
+/// Send a JSON command to the sidecar's stdin.
+#[tauri::command]
+fn sidecar_send(
+    state: State<'_, Mutex<SidecarState>>,
+    message: String,
+) -> Result<(), String> {
+    let mut s = state.lock().map_err(|e| e.to_string())?;
+    if let Some(ref mut child) = s.child {
+        child
+            .write((message.trim().to_string() + "\n").as_bytes())
+            .map_err(|e| format!("Failed to write to sidecar: {}", e))?;
+        Ok(())
+    } else {
+        Err("Sidecar not running".to_string())
+    }
+}
+
+/// Spawn the sidecar and wire up stdout event forwarding.
+fn spawn_sidecar(app: &tauri::AppHandle) -> Result<CommandChild, String> {
+    let shell = app.shell();
+    let (mut rx, child) = shell
+        .sidecar("vision-sidecar")
+        .map_err(|e| format!("Failed to create sidecar command: {}", e))?
+        .spawn()
+        .map_err(|e| format!("Failed to spawn sidecar: {}", e))?;
+
+    let app_handle = app.clone();
+
+    // Read sidecar stdout lines and emit as Tauri events
+    tauri::async_runtime::spawn(async move {
+        use tauri_plugin_shell::process::CommandEvent;
+
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(line) => {
+                    let line_str = String::from_utf8_lossy(&line);
+                    // Parse the JSON to determine event type
+                    if let Ok(json) = serde_json::from_str::<Value>(&line_str) {
+                        let event_type = json.get("type")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or("unknown");
+
+                        let event_name = format!("sidecar:{}", event_type);
+                        let _ = app_handle.emit(&event_name, json.clone());
+
+                        // Also emit generic event for the frontend
+                        let _ = app_handle.emit("sidecar:message", json);
+                    }
+                }
+                CommandEvent::Stderr(line) => {
+                    let line_str = String::from_utf8_lossy(&line);
+                    eprintln!("[sidecar stderr] {}", line_str);
+                }
+                CommandEvent::Terminated(status) => {
+                    eprintln!("[sidecar] terminated with {:?}", status);
+                    let _ = app_handle.emit("sidecar:terminated", serde_json::json!({
+                        "code": status.code,
+                        "signal": status.signal,
+                    }));
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+
+    Ok(child)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init())
+        .manage(Mutex::new(SidecarState { child: None }))
         .invoke_handler(tauri::generate_handler![
             launch_app,
             open_url,
             send_keyboard_shortcut,
-            get_installed_apps
+            get_installed_apps,
+            sidecar_send,
         ])
         .setup(|app| {
             // System tray
@@ -111,6 +189,14 @@ pub fn run() {
                             }
                         }
                         "quit" => {
+                            // Kill sidecar before quitting
+                            if let Some(state) = app.try_state::<Mutex<SidecarState>>() {
+                                if let Ok(mut s) = state.lock() {
+                                    if let Some(child) = s.child.take() {
+                                        let _ = child.kill();
+                                    }
+                                }
+                            }
                             app.exit(0);
                         }
                         _ => {}
@@ -118,10 +204,23 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Spawn sidecar
+            match spawn_sidecar(app.handle()) {
+                Ok(child) => {
+                    let state = app.state::<Mutex<SidecarState>>();
+                    let mut s = state.lock().unwrap();
+                    s.child = Some(child);
+                    println!("[vision] Sidecar spawned successfully");
+                }
+                Err(e) => {
+                    eprintln!("[vision] Failed to spawn sidecar: {}", e);
+                    // Non-fatal: app can still work for settings UI
+                }
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Hide main window to tray instead of quitting
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
                     api.prevent_close();
