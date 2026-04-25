@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { GestureTemplate } from "../engine/gestureClassifier";
 import { GestureMapping } from "../engine/actionDispatcher";
 
-type Step = "capture" | "name" | "choose" | "shortcut" | "app";
+type Step = "capture" | "name" | "choose" | "shortcut" | "app" | "url";
 
 interface Props {
   onSave: (template: GestureTemplate, mapping: GestureMapping) => void;
@@ -21,6 +21,7 @@ export default function AssignGesture({ onSave, onCancel }: Props) {
   const [appSearch, setAppSearch] = useState("");
   const [loadingApps, setLoadingApps] = useState(false);
   const [waitingForCapture, setWaitingForCapture] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
 
   // Step 1: Countdown then request sidecar to capture template
   useEffect(() => {
@@ -142,6 +143,26 @@ export default function AssignGesture({ onSave, onCancel }: Props) {
     );
   };
 
+  const handleSaveUrl = () => {
+    if (!urlInput.trim() || !capturedLandmarks || !gestureName.trim()) return;
+    const name = gestureName.trim();
+    let finalUrl = urlInput.trim();
+    if (!finalUrl.includes("://")) {
+      finalUrl = `https://${finalUrl}`;
+    }
+    onSave(
+      { name, landmarks: capturedLandmarks },
+      {
+        gesture: name,
+        action: {
+          type: "url",
+          value: finalUrl,
+          label: `Open ${finalUrl}`,
+        },
+      }
+    );
+  };
+
   const filteredApps = apps.filter((a) =>
     a.toLowerCase().includes(appSearch.toLowerCase())
   );
@@ -224,6 +245,12 @@ export default function AssignGesture({ onSave, onCancel }: Props) {
               >
                 🚀 Launch App
               </button>
+              <button
+                style={styles.choiceBtn}
+                onClick={() => setStep("url")}
+              >
+                🔗 Open URL
+              </button>
             </div>
             <button style={styles.cancelBtn} onClick={() => setStep("name")}>
               ← Back
@@ -297,6 +324,42 @@ export default function AssignGesture({ onSave, onCancel }: Props) {
             <button style={styles.cancelBtn} onClick={() => setStep("choose")}>
               ← Back
             </button>
+          </>
+        )}
+
+        {/* Step 4c: URL input */}
+        {step === "url" && (
+          <>
+            <h2 style={styles.title}>Enter a URL</h2>
+            <p style={styles.subtitle}>
+              What website should this gesture open?
+            </p>
+            <input
+              style={styles.searchInput}
+              type="text"
+              placeholder="e.g. google.com"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && urlInput.trim()) handleSaveUrl();
+              }}
+            />
+            <div style={styles.choiceRow}>
+              <button style={styles.cancelBtn} onClick={() => { setStep("choose"); setUrlInput(""); }}>
+                ← Back
+              </button>
+              <button
+                style={{
+                  ...styles.saveBtn,
+                  opacity: urlInput.trim() ? 1 : 0.4,
+                }}
+                onClick={handleSaveUrl}
+                disabled={!urlInput.trim()}
+              >
+                Save
+              </button>
+            </div>
           </>
         )}
       </div>

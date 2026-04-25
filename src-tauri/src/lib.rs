@@ -45,8 +45,10 @@ fn launch_app(path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn open_url(url: String) -> Result<String, String> {
-    StdCommand::new("open")
-        .arg(&url)
+    let script = format!(r#"open location "{}""#, url.replace("\"", "\\\""));
+    StdCommand::new("osascript")
+        .arg("-e")
+        .arg(&script)
         .spawn()
         .map_err(|e| format!("Failed to open URL {}: {}", url, e))?;
     Ok(format!("Opened {}", url))
