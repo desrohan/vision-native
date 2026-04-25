@@ -1,57 +1,82 @@
-# Vision
+# Gestus
 
-A macOS desktop app that detects hand gestures via webcam and triggers user-mapped actions — launch apps, fire keyboard shortcuts, or open URLs.
+A macOS desktop app that lets you control your computer with hand gestures via webcam — move the cursor, click, switch desktops, and trigger custom actions, all hands-free.
 
-Built with **Tauri v2**, **React**, **TypeScript**, and **MediaPipe HandLandmarker**.
+Built with **Tauri v2**, **React**, **TypeScript**, and a native **Swift sidecar** using Apple's **Vision framework**.
 
 ## How It Works
 
-1. **Show open palm** → system arms
-2. **Make any gesture** → action fires (app launch, keyboard shortcut, etc.)
-3. **Assign Gesture** → capture any hand pose, name it, map it to an action
+**Split-hand model:** one hand controls the cursor, the other performs actions.
 
-Gestures are template-matched against your saved poses — no predefined gesture set.
+- **Move cursor** — point with your index finger (cursor hand)
+- **Click** — pinch thumb + index finger (action hand)
+- **Drag** — hold pinch for 350ms, move, release to drop
+- **Switch desktops** — swipe left/right with either hand
+- **Mission Control** — close fist (action hand)
+- **App Exposé** — open fist (action hand)
+- **Custom gestures** — show open palm to arm, then make any gesture to fire a mapped action (app launch, keyboard shortcut, URL)
 
 ## Features
 
-- Real-time hand tracking at 60 FPS via MediaPipe (WebGPU)
+- Native hand tracking via Apple Vision framework (25-30 FPS)
+- Split-hand cursor/action model with configurable hand preference
+- Pinch-to-click with 3-frame debounce (no ghost clicks)
+- Hold-to-drag with configurable threshold
+- Swipe gestures for desktop switching (configurable toggle)
+- Fist open/close for Mission Control and App Exposé
 - Template-based gesture recognition — any hand pose can be a gesture
 - Gesture → action mapping: app launch, keyboard shortcuts, URLs
-- Activation model: open palm arms, next gesture fires, cooldown prevents repeats
+- Cursor smoothing slider
 - System tray with hide-to-tray on close
 - Overlay HUD (configurable) showing armed/fired state
-- Settings: camera selection, confidence threshold, overlay toggle
+- Camera preview with landmark overlay
 - Multi-hand support (2 hands)
+
+## Architecture
+
+The app runs as a Tauri shell with a Swift sidecar process:
+
+```
+Tauri (Rust) ←→ JSON over stdin/stdout ←→ Swift Sidecar
+     ↑                                         ↓
+  React UI                              AVFoundation (camera)
+                                        Vision (hand tracking)
+                                        CoreGraphics (cursor/click)
+                                        AppleScript (desktop switching)
+```
+
+The sidecar owns the camera and hand tracking pipeline. It streams landmarks and gesture events to the Tauri frontend over JSON. Cursor movement and click simulation happen natively in Swift via `CGEvent`. Desktop switching uses AppleScript through `System Events` for reliability.
 
 ## Development
 
-**Prerequisites:** Node.js, Rust, Xcode Command Line Tools
+**Prerequisites:** Node.js, Rust, Xcode Command Line Tools, Swift 6+
 
 ```bash
 npm install
 ```
 
-**Run (requires ad-hoc codesigning for camera access):**
+**Build the Swift sidecar:**
 
 ```bash
-# Terminal 1: Vite dev server
-npx vite --port 1420
-
-# Terminal 2: Build, sign, and run
-cd src-tauri && cargo build \
-  && codesign --force --deep --sign - --entitlements entitlements.dev.plist target/debug/vision-tauri \
-  && cd .. && TAURI_DEV=1 ./src-tauri/target/debug/vision-tauri
+npm run build:sidecar
 ```
 
-> `npm run tauri dev` won't work because the binary needs ad-hoc codesigning with the camera entitlement.
+**Run in development:**
+
+```bash
+npx tauri dev
+```
+
+> **Permissions required:** Camera access and Accessibility (System Settings → Privacy & Security). The app will prompt on first launch.
 
 ## Build for Distribution
 
 ```bash
-npm run tauri build
+npm run build:sidecar
+npx tauri build
 ```
 
-Produces a `.dmg` in `src-tauri/target/release/bundle/dmg/`.
+Produces `Gestus.app` and `Gestus_0.1.0_aarch64.dmg` in `src-tauri/target/release/bundle/`.
 
 ## Tech Stack
 
@@ -59,15 +84,36 @@ Produces a `.dmg` in `src-tauri/target/release/bundle/dmg/`.
 |-------|------|
 | Shell | Tauri v2 (macOS WKWebView) |
 | Frontend | React 19 + TypeScript + Vite |
-| Vision | MediaPipe HandLandmarker (WASM/WebGL) |
-| Backend | Rust |
-| Input Sim | AppleScript via `osascript` |
+| Hand Tracking | Apple Vision framework (Swift sidecar) |
+| Input Simulation | CoreGraphics (`CGEvent`) + AppleScript |
+| Backend | Rust (sidecar lifecycle, tray, IPC) |
 | Storage | localStorage |
+
+## Project Structure
+
+```
+src/                    # React frontend
+  components/           # CameraPreview, Settings, AssignGesture
+  engine/               # settings, storage, overlayManager
+src-tauri/
+  src/                  # Rust backend (sidecar spawn, tray, commands)
+  sidecar/              # Swift package
+    Sources/VisionSidecar/
+      main.swift            # Orchestrator
+      CameraCapture.swift   # AVFoundation camera
+      HandTracker.swift     # Vision hand pose detection
+      GestureClassifier.swift  # Template matching
+      GestureDetector.swift    # Swipe + fist detection
+      InputController.swift    # Cursor, click, drag
+      StateMachine.swift       # idle → armed → fired → cooldown
+      Protocol.swift           # JSON IPC protocol
+```
 
 ## Limitations
 
-- **macOS only** — uses AppleScript for input sim, `/Applications` for app listing
-- **Foreground only** — WKWebView suspends video frame decoding when the window is unfocused (WebKit limitation)
+- **macOS only** — uses Apple Vision framework, CoreGraphics, and AppleScript
+- **Apple Silicon / Intel** — builds natively for the host architecture
+- **Accessibility permission** required for cursor control and keyboard simulation
 
 ## License
 
